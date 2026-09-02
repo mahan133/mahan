@@ -52,6 +52,7 @@ FOSHLIST: List[str] = []
 SPAM_TARGET: Optional[int] = None
 SPAM_TEXT: str = "ONLINE"
 SPAM_SPEED: float = 1.0  
+SPAM_TASK: None
 ON_OFF_ACTIVE: bool = False
 ON_OFF_TASK: Optional[asyncio.Task] = None
 ON_OFF_SEQUENCE: List[str] = ["چس", "مس", "کص","لش", "مست", "1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "مدرک"]
@@ -568,19 +569,23 @@ def is_admin(user_id: int) -> bool:
 async def spam_loop_all_bots(target, text, speed):
     """Send spam with ALL bots."""
     global SPAM_ACTIVE
+    print(f"[SPAM] Loop started. Target: {target}, Text: {text[:30]}...")
     while SPAM_ACTIVE and target:
         for i, client in enumerate(clients):
-            if not SPAM_ACTIVE:
+            if not SPAM_ACTIVE:  # ✅ Check here to stop immediately
+                print(f"[SPAM] Stopping mid-loop (bot {i})")
                 break
             try:
                 await client.send_message(target, text)
-                print(f"spam{i} Sent to {target}")
+                print(f"[SPAM] Bot {i} sent to {target}")
             except FloodWaitError as e:
                 print(f"[SPAM] Bot {i} Flood wait: {e.seconds}s")
                 await asyncio.sleep(e.seconds)
             except Exception as e:
                 print(f"[SPAM] Bot {i} Error: {e}")
-        await asyncio.sleep(speed)
+        if SPAM_ACTIVE:  
+            await asyncio.sleep(speed)
+    print("[SPAM] Loop ended")
 
 
 async def on_off_loop_all_bots(chat_id):
@@ -850,7 +855,7 @@ async def fetch_old_messages(client):
 
 
 async def handle_all_messages(event):
-    global ADMIN_IDS, FOSHLIST, SPAM_TARGET, SPAM_TEXT, SPAM_ACTIVE, SPAM_SPEED
+    global ADMIN_IDS, FOSHLIST, SPAM_TARGET, SPAM_TEXT, SPAM_ACTIVE, SPAM_SPEED, SPAM_TASK
     global ON_OFF_ACTIVE, ON_OFF_TASK, ENEMY_TARGET, ENEMY_ACTIVE, REPLY_TO_ENEMY, ORIGINAL_NAME, ORIGINAL_PHOTO, FORWARD_SPAM_ACTIVE, FORWARD_SPAM_TASK
     global TAG_TARGETS, TAG_SPAM_ACTIVE, TAG_SPAM_TASK, TAG_SPAM_DELAY, TAG_SPAM_CHAT_ID, TAG_SYMBOL
     global MASTER_CLIENT
@@ -974,12 +979,6 @@ async def handle_all_messages(event):
                         except Exception as e:
                             print(f"[ERROR] Repeat reply failed: {e}")
                         return
-                    # Add this method at the end of SMSBomber class (before the class ends):
-    def stop(self):
-        """Stop the bomber"""
-        self.stop_flag = True
-        print("[BOMBER] Stop signal received")
-        return True
 
     if user_id not in ADMIN_IDS:
         print(f"[BOT] Ignored non-admin message from {user_id}")
@@ -1099,49 +1098,63 @@ Development by @DevilWillCryBitch````
 
     # SPAM (ALL BOTS)
     if text == "spam":
+        print(f"[DEBUG] Spam command received. SPAM_ACTIVE={SPAM_ACTIVE}")
+
+        # Check if SPAM_TEXT is set
+        if not SPAM_TEXT or SPAM_TEXT == "":
+            await event.reply(" No spam text set! Use: setfosh <your message>")
+            return
+
         if not SPAM_TARGET:
-            await event.reply("No target chat set. Use setid first.")
+            await event.reply(" No target chat set. Use: setid <chat_id>")
             return
+
         if SPAM_ACTIVE:
-            await event.reply("Spam is already running. Use spamoff to stop.")
+            await event.reply(" Spam is already running. Use spamoff to stop.")
             return
-        
+
         SPAM_ACTIVE = True
         await event.reply(
-            f" {len(clients)} \n"
-            f" {SPAM_TARGET}\n"
-            f" {SPAM_TEXT}\n"
-            f" {SPAM_SPEED} seconds"
+            f" SPAM STARTED\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"{len(clients)}\n"
+            f" Target {SPAM_TARGET}\n"
+            f" Text: {SPAM_TEXT[:50]}...\n"
+            f" Speed: {SPAM_SPEED} seconds\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f" Use 'spamoff' to stop"
         )
-        
+
         if SPAM_TASK and not SPAM_TASK.done():
             SPAM_TASK.cancel()
         SPAM_TASK = asyncio.create_task(spam_loop_all_bots(SPAM_TARGET, SPAM_TEXT, SPAM_SPEED))
         return
-    
+
     if text == "spamoff":
+        print(f"[DEBUG] spamoff received. SPAM_ACTIVE={SPAM_ACTIVE}")
         if SPAM_ACTIVE:
             SPAM_ACTIVE = False
             if SPAM_TASK and not SPAM_TASK.done():
                 SPAM_TASK.cancel()
-            await event.reply("SPAM STOP")
+                print("[DEBUG] Spam task cancelled")
+            await event.reply(" SPAM STOPPED")
         else:
-            await event.reply("NOT ACTIVE")
+            await event.reply(" Spam is not active")
         return
-    
+
     # SETFOSH
     if text.startswith("setfosh "):
         SPAM_TEXT = text[8:].strip()
         await event.reply(f"Spam text set to: {SPAM_TEXT}")
         return
-    
+
     # ID
     if text == "id":
         chat_id = event.chat_id
         chat_type = "Private" if event.is_private else "Group" if event.is_group else "Channel"
         await event.reply(f"ID {chat_id}\nType: {chat_type}")
         return
-    
+
     # SETID
     if text.startswith("setid "):
         try:
@@ -1254,47 +1267,116 @@ Development by @DevilWillCryBitch````
         await event.reply(f"Forward Config - {status}\nTARGET: {target}\nSOURCE: {source}/{msg_id}\nDELAY: {min_delay}-{max_delay} seconds")
         return
 
-    # JOIN (ALL BOTS)
+    # JOIN (ALL BOTS) - FIXED
     if text.startswith("join "):
         invite_input = raw_text[5:].strip()
         if not invite_input:
             await event.reply("Usage: join <invite_link> or join @channelname")
             return
 
-        invite_input = invite_input.strip()
-        target = normalize_join_target(invite_input)
-        if not target:
-            await event.reply("Invalid invite link.")
+        if MASTER_CLIENT is None:
+            await event.reply("❌ Master client not initialized!")
             return
+
+        # Clean the input
+        invite_input = invite_input.strip()
+        
+        # Check if it's a private invite (starts with + or contains joinchat)
+        is_private = False
+        target = invite_input
+        
+        # Extract hash from various invite formats
+        if "joinchat/" in invite_input:
+            target = invite_input.split("joinchat/")[-1].split("?")[0].strip("/")
+            is_private = True
+        elif invite_input.startswith("+"):
+            target = invite_input.strip()
+            is_private = True
+        elif "t.me/+" in invite_input:
+            target = invite_input.split("t.me/+")[-1].split("?")[0].strip("/")
+            is_private = True
+        else:
+            target = normalize_join_target(invite_input)
+            if not target:
+                await event.reply("Invalid invite link.")
+                return
 
         try:
             entity = None
-            try:
-                entity = await MASTER_CLIENT.get_entity(target if not target.startswith("@") else target[1:])
-            except:
-                pass
+            
+            if is_private:
+                try:
+                    await event.reply("🔄 Joining private chat...")
+                    result = await MASTER_CLIENT(ImportChatInviteRequest(target))
+                    if result and hasattr(result, 'chats') and result.chats:
+                        entity = result.chats[0]
+                        await event.reply(f"✅ Private invite accepted! Chat: {getattr(entity, 'title', 'Unknown')}")
+                    else:
+                        await event.reply("❌ Failed to join private chat")
+                        return
+                except Exception as e:
+                    error_msg = str(e)
+                    if "already" in error_msg.lower():
+                        await event.reply("ℹ️ Already a member of this chat")
+                        return
+                    await event.reply(f"❌ Failed to join private invite: {error_msg[:100]}")
+                    return
+            else:
+                try:
+                    await event.reply("🔄 Finding public channel...")
+                    entity = await MASTER_CLIENT.get_entity(target)
+                except Exception as e:
+                    await event.reply(f"❌ Could not find channel: {str(e)[:100]}")
+                    return
 
             if not entity:
                 await event.reply("Could not find the channel/group.")
                 return
 
+            # Join with all clients
             joined_count = 0
             for i, client in enumerate(clients):
                 try:
-                    await client(JoinChannelRequest(entity))
+                    if is_private:
+                        await client(ImportChatInviteRequest(target))
+                    else:
+                        await client(JoinChannelRequest(entity))
                     joined_count += 1
-                    print(f"[JOIN] Bot {i} joined {invite_input}")
+                    print(f"[JOIN] Client {i} joined {invite_input}")
                     await asyncio.sleep(0.5)
                 except UserAlreadyParticipantError:
                     joined_count += 1
-                    print(f"[JOIN] Bot {i} already joined")
+                    print(f"[JOIN] Client {i} already joined")
+                except FloodWaitError as e:
+                    print(f"[JOIN] Client {i} flood wait: {e.seconds}s")
+                    await asyncio.sleep(e.seconds)
                 except Exception as e:
-                    print(f"[JOIN] Bot {i} error: {e}")
+                    print(f"[JOIN] Client {i} error: {e}")
 
-            await event.reply(f"{joined_count}/{len(clients)} bots joined successfully")
+            await event.reply(f"✅ {joined_count}/{len(clients)} clients joined successfully")
         except Exception as e:
-            await event.reply(f"Failed to join: {e}")
+            await event.reply(f"❌ Failed to join: {str(e)[:200]}")
         return
+
+    # ADDFOSH - moved to commands handler
+    await _commands_handler(event, text, client_instance)
+
+try:
+    with open(FOSH_FILE, "r", encoding="utf-8") as f:
+        FOSHLIST: List[str] = [line.strip() for line in f if line.strip()]
+except FileNotFoundError:
+    FOSHLIST: List[str] = [
+        "بیا پایین",
+        "کصخل",
+        "برو گمشو"
+    ]
+    print("fosh.txt not found. Using default fosh list.")
+
+
+async def _commands_handler(event, text, client):
+    global ADMIN_IDS, FOSHLIST, ENEMY_TARGET, ENEMY_ACTIVE, REPLY_TO_ENEMY, ORIGINAL_NAME, ORIGINAL_PHOTO
+    global TAG_TARGETS, TAG_SPAM_ACTIVE, TAG_SPAM_TASK, TAG_SPAM_DELAY, TAG_SPAM_CHAT_ID, TAG_SYMBOL
+    user_id = event.sender_id
 
     # ADDFOSH
     if text == "addfosh":
@@ -1314,26 +1396,6 @@ Development by @DevilWillCryBitch````
             f"Preview: {replied_msg.text[:50]}..."
         )
         return
-
-    await _commands_handler(event, text, client_instance)
-
-# Load fosh file
-try:
-    with open(FOSH_FILE, "r", encoding="utf-8") as f:
-        FOSHLIST: List[str] = [line.strip() for line in f if line.strip()]
-except FileNotFoundError:
-    FOSHLIST: List[str] = [
-        "بیا پایین",
-        "کصخل",
-        "برو گمشو"
-    ]
-    print("fosh.txt not found. Using default fosh list.")
-
-
-async def _commands_handler(event, text, client):
-    global ADMIN_IDS, FOSHLIST, ENEMY_TARGET, ENEMY_ACTIVE, REPLY_TO_ENEMY, ORIGINAL_NAME, ORIGINAL_PHOTO
-    global TAG_TARGETS, TAG_SPAM_ACTIVE, TAG_SPAM_TASK, TAG_SPAM_DELAY, TAG_SPAM_CHAT_ID, TAG_SYMBOL
-    user_id = event.sender_id
 
     # LISTFOSH
     if text == "listfosh":
