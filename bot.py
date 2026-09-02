@@ -1275,7 +1275,7 @@ Development by @DevilWillCryBitch````
             return
 
         if MASTER_CLIENT is None:
-            await event.reply("❌ Master client not initialized!")
+            await event.reply(" Master client not initialized!")
             return
 
         # Clean the input
@@ -1306,27 +1306,27 @@ Development by @DevilWillCryBitch````
             
             if is_private:
                 try:
-                    await event.reply("🔄 Joining private chat...")
+                    await event.reply(" Joining")
                     result = await MASTER_CLIENT(ImportChatInviteRequest(target))
                     if result and hasattr(result, 'chats') and result.chats:
                         entity = result.chats[0]
-                        await event.reply(f"✅ Private invite accepted! Chat: {getattr(entity, 'title', 'Unknown')}")
+                        await event.reply(f" Private invite accepted! Chat: {getattr(entity, 'title', 'Unknown')}")
                     else:
-                        await event.reply("❌ Failed to join private chat")
+                        await event.reply("it join")
                         return
                 except Exception as e:
                     error_msg = str(e)
                     if "already" in error_msg.lower():
-                        await event.reply("ℹ️ Already a member of this chat")
+                        await event.reply(" Already a member of this chat")
                         return
-                    await event.reply(f"❌ Failed to join private invite: {error_msg[:100]}")
+                    await event.reply(f" Failed to join private invite: {error_msg[:100]}")
                     return
             else:
                 try:
-                    await event.reply("🔄 Finding public channel...")
+                    await event.reply(" Finding public channel...")
                     entity = await MASTER_CLIENT.get_entity(target)
                 except Exception as e:
-                    await event.reply(f"❌ Could not find channel: {str(e)[:100]}")
+                    await event.reply(f" Could not find channel: {str(e)[:100]}")
                     return
 
             if not entity:
@@ -1353,9 +1353,9 @@ Development by @DevilWillCryBitch````
                 except Exception as e:
                     print(f"[JOIN] Client {i} error: {e}")
 
-            await event.reply(f"✅ {joined_count}/{len(clients)} clients joined successfully")
+            await event.reply(f" {joined_count}/{len(clients)} clients joined successfully")
         except Exception as e:
-            await event.reply(f"❌ Failed to join: {str(e)[:200]}")
+            await event.reply(f" Failed to join: {str(e)[:200]}")
         return
 
     # ADDFOSH - moved to commands handler
