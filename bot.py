@@ -1749,4 +1749,3 @@ if __name__ == "__main__":
         print("[BOT] Shutting down...")
     except Exception as e:
         print(f"[ERROR] Bot crashed: {e}")
-iy
